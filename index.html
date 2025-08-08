@@ -37,7 +37,7 @@
       <div>
         <label class="block text-sm font-medium mb-1">Evento *</label>
         <select id="evento" required class="w-full border rounded p-2"></select>
-        <p class="text-xs text-gray-500 mt-1">Itens do board de Projetos/Eventos</p>
+        <p class="text-xs text-gray-500 mt-1">Itens dos boards conectados à coluna Evento</p>
       </div>
 
       <div>
@@ -59,7 +59,209 @@
     <p id="status" class="mt-4 text-sm"></p>
   </div>
 
-  <script src="config.js"></script>
-  <script src="script.js"></script>
+<script>
+  // IDs das colunas do board de Reembolso
+  const COL_PESSOA = "person";
+  const COL_DATA_GASTO = "date4";
+  const COL_VALOR = "numbers";
+  const COL_EVENTO = "connect_boards__1";
+  const COL_LINK = "link";
+  const COL_COMPROVANTE = "files";
+
+  const monday = mondaySdk();
+
+  // Pega token da sessão do usuário logado
+  monday.get("sessionToken").then(res => {
+    monday.setToken(res.data);
+  });
+
+  // Guarda o boardId atual
+  let currentBoardId = null;
+  monday.listen("context", (res) => {
+    if (res.data.boardId) {
+      currentBoardId = res.data.boardId;
+      populateEventoSelectFromConnectedBoards(currentBoardId, COL_EVENTO);
+    }
+  });
+
+  function setStatus(msg, ok = true) {
+    const el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = ok ? "mt-4 text-sm text-green-700" : "mt-4 text-sm text-red-700";
+  }
+
+  function escapeForGraphQL(jsonObj) {
+    return JSON.stringify(jsonObj).replace(/"/g, '\\"');
+  }
+
+  async function loadUsers() {
+    const res = await monday.api(`
+    query {
+      users(kind: non_guests, limit: 500) {
+        id
+        name
+        enabled
+      }
+    }
+  `);
+    return res.data.users.filter(u => u.enabled);
+  }
+
+  async function getConnectedBoardIds(boardId, columnId) {
+    const res = await monday.api(`
+    query {
+      boards(ids: [${boardId}]) {
+        columns(ids: ["${columnId}"]) {
+          settings_str
+        }
+      }
+    }
+  `);
+    const settings = JSON.parse(res.data.boards[0].columns[0].settings_str || "{}");
+    const ids = settings.boardIds || settings.boardIdsStr || [];
+    return ids.map(Number).filter(Boolean);
+  }
+
+  async function populatePessoaSelect() {
+    const users = await loadUsers();
+    const sel = document.getElementById("pessoa");
+    sel.innerHTML = "";
+    users.forEach(u => {
+      const opt = document.createElement("option");
+      opt.value = u.id;
+      opt.textContent = u.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function populateEventoSelectFromConnectedBoards(boardId, colEvento) {
+    const sel = document.getElementById("evento");
+    sel.innerHTML = "";
+
+    const connectedBoardIds = await getConnectedBoardIds(boardId, colEvento);
+    if (!connectedBoardIds.length) {
+      setStatus("A coluna de Evento não está conectada a nenhum board.", false);
+      return;
+    }
+
+    const queries = connectedBoardIds.map(id => monday.api(`
+    query {
+      boards(ids: [${id}]) {
+        id
+        name
+        items_page(limit: 500) {
+          items { id name }
+        }
+      }
+    }
+  `));
+
+    const results = await Promise.all(queries);
+    results.forEach(r => {
+      const b = r.data.boards[0];
+      const groupLabel = document.createElement("optgroup");
+      groupLabel.label = `• ${b.name}`;
+      sel.appendChild(groupLabel);
+
+      b.items_page.items.forEach(it => {
+        const opt = document.createElement("option");
+        opt.value = it.id;
+        opt.textContent = it.name;
+        groupLabel.appendChild(opt);
+      });
+    });
+  }
+
+  async function createReembolso(boardId, payload) {
+    const columnValues = {
+      [COL_PESSOA]: { personsAndTeams: [{ id: Number(payload.pessoaId), kind: "person" }] },
+      [COL_DATA_GASTO]: { date: payload.dataGasto },
+      [COL_VALOR]: payload.valor ? String(payload.valor) : "",
+      [COL_EVENTO]: { linkedPulseIds: [{ linkedPulseId: Number(payload.eventoItemId) }] },
+      ...(payload.link ? { [COL_LINK]: { url: payload.link, text: "Comprovante/Referência" } } : {})
+    };
+
+    const mutation = `
+    mutation {
+      create_item(
+        board_id: ${boardId},
+        item_name: "${payload.descricao.replace(/"/g, '\\"')}",
+        column_values: "${escapeForGraphQL(columnValues)}"
+      ) { id }
+    }
+  `;
+    return monday.api(mutation);
+  }
+
+  async function uploadFileToColumn(itemId, file) {
+    const token = await monday.get("sessionToken").then(r => r.data);
+
+    const formData = new FormData();
+    formData.append("query", `
+    mutation addFile($file: File!) {
+      add_file_to_column(
+        item_id: ${itemId},
+        column_id: "${COL_COMPROVANTE}",
+        file: $file
+      ) { id }
+    }
+  `);
+    formData.append("variables[file]", file);
+
+    const res = await fetch("https://api.monday.com/v2/file", {
+      method: "POST",
+      headers: { Authorization: token },
+      body: formData
+    });
+
+    return res.json();
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await populatePessoaSelect();
+
+    document.getElementById("form-reembolso").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setStatus("Enviando...");
+
+      const descricao = document.getElementById("descricao").value.trim();
+      const pessoaId = document.getElementById("pessoa").value;
+      const dataGasto = document.getElementById("data_gasto").value;
+      const valor = document.getElementById("valor").value;
+      const eventoItemId = document.getElementById("evento").value;
+      const link = document.getElementById("link").value.trim();
+      const file = document.getElementById("comprovante").files[0];
+
+      if (!descricao || !pessoaId || !dataGasto || !eventoItemId) {
+        setStatus("Preencha os campos obrigatórios.", false);
+        return;
+      }
+
+      try {
+        const res = await createReembolso(currentBoardId, {
+          descricao, pessoaId, dataGasto, valor, eventoItemId, link
+        });
+
+        if (res.errors && res.errors.length > 0) {
+          setStatus("Erro: " + res.errors[0].message, false);
+          return;
+        }
+
+        const itemId = res.data.create_item.id;
+
+        if (file) {
+          await uploadFileToColumn(itemId, file);
+        }
+
+        setStatus(`Reembolso criado com sucesso! ID: ${itemId}`);
+        e.target.reset();
+      } catch (err) {
+        console.error(err);
+        setStatus("Erro ao criar reembolso. Veja o console para detalhes.", false);
+      }
+    });
+  });
+</script>
+
 </body>
 </html>
