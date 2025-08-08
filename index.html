@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reembolso Geral</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js@0.5.6/dist/main.js"></script>
+</head>
+<body class="min-h-screen bg-gray-50 p-6">
+  <div class="max-w-2xl mx-auto bg-white p-6 rounded-xl shadow">
+    <h1 class="text-2xl font-bold mb-6">Reembolso Geral</h1>
+
+    <form id="form-reembolso" class="space-y-5">
+      <div>
+        <label class="block text-sm font-medium mb-1">Descrição do Gasto *</label>
+        <input id="descricao" type="text" maxlength="255" required class="w-full border rounded p-2">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Pessoa *</label>
+        <select id="pessoa" required class="w-full border rounded p-2"></select>
+        <p class="text-xs text-gray-500 mt-1">Usuários ativos do Monday</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Data do gasto *</label>
+          <input id="data_gasto" type="date" required class="w-full border rounded p-2">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Valor</label>
+          <input id="valor" type="number" step="0.01" class="w-full border rounded p-2">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Evento *</label>
+        <select id="evento" required class="w-full border rounded p-2"></select>
+        <p class="text-xs text-gray-500 mt-1">Itens do board de Projetos/Eventos</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Link (opcional)</label>
+        <input id="link" type="url" placeholder="https://..." class="w-full border rounded p-2">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Comprovante</label>
+        <input id="comprovante" type="file" accept="image/*,application/pdf" class="w-full border rounded p-2">
+        <p class="text-xs text-gray-500 mt-1">Aceita imagens ou PDF</p>
+      </div>
+
+      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">
+        Enviar
+      </button>
+    </form>
+
+    <p id="status" class="mt-4 text-sm"></p>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
