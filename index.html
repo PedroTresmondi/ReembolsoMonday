@@ -2,64 +2,90 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Reembolso Geral</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/monday-sdk-js@0.5.6/dist/main.js"></script>
+  <style>
+    /* Evita “zoom” em iOS ao focar inputs */
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  </style>
 </head>
-<body class="min-h-screen bg-gray-50 p-6">
-  <div class="max-w-2xl mx-auto bg-white p-6 rounded-xl shadow">
-    <h1 class="text-2xl font-bold mb-6">Reembolso Geral</h1>
+<body class="min-h-screen bg-gray-50 p-4 md:p-6">
+  <div class="mx-auto w-full max-w-xl md:max-w-2xl bg-white p-4 md:p-6 rounded-xl shadow">
+    <h1 class="text-xl md:text-2xl font-bold mb-4 md:mb-6">Reembolso</h1>
 
-    <form id="form-reembolso" class="space-y-5">
+    <form id="form-reembolso" class="space-y-4 md:space-y-5" novalidate>
       <div>
         <label class="block text-sm font-medium mb-1">Descrição do Gasto *</label>
-        <input id="descricao" type="text" maxlength="255" required class="w-full border rounded p-2">
+        <input id="descricao" type="text" maxlength="255" required enterkeyhint="next"
+          class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
       </div>
 
       <div>
         <label class="block text-sm font-medium mb-1">Pessoa *</label>
-        <select id="pessoa" required class="w-full border rounded p-2"></select>
+        <select id="pessoa" required class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
+          <option>Carregando…</option>
+        </select>
         <p class="text-xs text-gray-500 mt-1">Usuários ativos do Monday</p>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <div>
           <label class="block text-sm font-medium mb-1">Data do gasto *</label>
-          <input id="data_gasto" type="date" required class="w-full border rounded p-2">
+          <input id="data_gasto" type="date" required class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
         </div>
         <div>
           <label class="block text-sm font-medium mb-1">Valor</label>
-          <input id="valor" type="number" step="0.01" class="w-full border rounded p-2">
+          <input id="valor" type="text" inputmode="decimal" pattern="[0-9]+([\\.,][0-9]+)?"
+            class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm" placeholder="0,00">
         </div>
       </div>
 
       <div>
         <label class="block text-sm font-medium mb-1">Evento *</label>
-        <select id="evento" required class="w-full border rounded p-2"></select>
+        <select id="evento" required class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
+          <option>Carregando…</option>
+        </select>
         <p class="text-xs text-gray-500 mt-1">Itens dos boards conectados à coluna Evento</p>
       </div>
 
       <div>
         <label class="block text-sm font-medium mb-1">Link (opcional)</label>
-        <input id="link" type="url" placeholder="https://..." class="w-full border rounded p-2">
+        <input id="link" type="url" inputmode="url" placeholder="https://..."
+          class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
       </div>
 
       <div>
         <label class="block text-sm font-medium mb-1">Comprovante</label>
-        <input id="comprovante" type="file" accept="image/*,application/pdf" class="w-full border rounded p-2">
-        <p class="text-xs text-gray-500 mt-1">Aceita imagens ou PDF</p>
+        <input id="comprovante" type="file" accept="image/*,application/pdf" capture="environment"
+          class="w-full border rounded-lg p-3 md:p-2 text-base md:text-sm">
+        <p id="fileHint" class="text-xs text-gray-500 mt-1">Aceita imagens ou PDF (máx. ~10MB)</p>
       </div>
 
-      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">
+      <!-- Espaço para não ficar coberto pela barra fixa -->
+      <div class="h-16 md:h-0"></div>
+      </form>
+      
+      <p id="status" class="mt-2 text-sm"></p>
+      </div>
+      
+      <!-- Barra fixa (mobile) -->
+      <div class="fixed inset-x-0 bottom-0 md:static bg-white border-t p-3 md:p-0
+                    [padding-bottom:env(safe-area-inset-bottom)]">
+        <div class="mx-auto w-full max-w-xl md:max-w-2xl">
+          <button id="submitBtn" class="w-full md:w-auto bg-blue-600 text-white py-3 md:py-2 px-4 rounded-lg shadow">
         Enviar
       </button>
-    </form>
-
-    <p id="status" class="mt-4 text-sm"></p>
+    </div>
   </div>
 
 <script>
+  /** IDs das colunas do board de Reembolso (seu board) **/
   const COL_PESSOA = "person";
   const COL_DATA_GASTO = "date4";
   const COL_VALOR = "numbers";
@@ -68,47 +94,56 @@
   const COL_COMPROVANTE = "files";
 
   const monday = mondaySdk();
-
   let currentBoardId = null;
-
-  // --- util: aguarda token e contexto antes de qualquer chamada ---
-  async function waitForMondayReady() {
-    // 1) token da sessão
-    const tokenRes = await monday.get("sessionToken");
-    if (!tokenRes || !tokenRes.data) throw new Error("Não foi possível obter sessionToken.");
-    monday.setToken(tokenRes.data);
-
-    // 2) contexto do board
-    const ctx = await new Promise(resolve => {
-      monday.listen("context", res => resolve(res));
-  });
-    if (!ctx || !ctx.data || !ctx.data.boardId) throw new Error("Não foi possível obter boardId do contexto.");
-    currentBoardId = ctx.data.boardId;
-  }
 
   function setStatus(msg, ok = true) {
     const el = document.getElementById("status");
     el.textContent = msg;
-    el.className = ok ? "mt-4 text-sm text-green-700" : "mt-4 text-sm text-red-700";
-  }
+  el.className = ok ? "mt-2 text-sm text-green-700" : "mt-2 text-sm text-red-700";
+}
 
   function escapeForGraphQL(jsonObj) {
     return JSON.stringify(jsonObj).replace(/"/g, '\\"');
   }
 
+  /* ---------- Robustez: retries para token/context ---------- */
+  async function getSessionTokenWithRetry(tries = 10, ms = 300) {
+    for (let i = 0; i < tries; i++) {
+      const r = await monday.get("sessionToken");
+      if (r && r.data) return r.data;
+      await new Promise(res => setTimeout(res, ms));
+    }
+    throw new Error("Não foi possível obter sessionToken.");
+  }
+  async function getBoardIdWithRetry(tries = 20, ms = 300) {
+    for (let i = 0; i < tries; i++) {
+      const r = await monday.get("context");
+      if (r?.data?.boardId) return r.data.boardId;
+      await new Promise(res => setTimeout(res, ms));
+    }
+    // fallback via listen (curto)
+    const fromListen = await new Promise(resolve => {
+      let done = false;
+      monday.listen("context", res => {
+        if (!done && res?.data?.boardId) { done = true; resolve(res.data.boardId); }
+      });
+      setTimeout(() => !done && resolve(null), ms * 2);
+    });
+    return fromListen;
+  }
+
+  /* ---------- Data loaders ---------- */
   async function loadUsers() {
     const res = await monday.api(`
     query {
       users(kind: non_guests, limit: 500) {
-        id
-        name
-        enabled
+        id name enabled
       }
     }
   `);
-    if (!res || !res.data) throw new Error("Falha ao carregar usuários (sem data).");
-    return res.data.users.filter(u => u.enabled);
-  }
+  if (!res?.data) throw new Error("Falha ao carregar usuários.");
+  return res.data.users.filter(u => u.enabled);
+}
 
   async function getConnectedBoardIds(boardId, columnId) {
     const res = await monday.api(`
@@ -118,68 +153,73 @@
       }
     }
   `);
-    if (!res || !res.data) throw new Error("Falha ao carregar settings da coluna Evento.");
-    const settings = JSON.parse(res.data.boards[0].columns[0].settings_str || "{}");
-    const ids = settings.boardIds || settings.boardIdsStr || [];
-    return ids.map(Number).filter(Boolean);
-  }
+  if (!res?.data) throw new Error("Falha ao ler settings da coluna Evento.");
+  const settings = JSON.parse(res.data.boards[0].columns[0].settings_str || "{}");
+  const ids = settings.boardIds || settings.boardIdsStr || [];
+  return ids.map(Number).filter(Boolean);
+}
 
   async function populatePessoaSelect() {
-    const users = await loadUsers();
-    const sel = document.getElementById("pessoa");
-    sel.innerHTML = "";
-    users.forEach(u => {
-      const opt = document.createElement("option");
-      opt.value = u.id;
-      opt.textContent = u.name;
-      sel.appendChild(opt);
-    });
-  }
+  const sel = document.getElementById("pessoa");
+  sel.innerHTML = '<option>Carregando…</option>';
+  const users = await loadUsers();
+  sel.innerHTML = "";
+  users.forEach(u => {
+    const opt = document.createElement("option");
+    opt.value = u.id;
+    opt.textContent = u.name;
+    sel.appendChild(opt);
+  });
+}
 
   async function populateEventoSelectFromConnectedBoards(boardId, colEvento) {
     const sel = document.getElementById("evento");
+  sel.innerHTML = '<option>Carregando…</option>';
+
+  const connectedIds = await getConnectedBoardIds(boardId, colEvento);
+  if (!connectedIds.length) {
     sel.innerHTML = "";
+    setStatus("A coluna de Evento não está conectada a nenhum board.", false);
+    sel.disabled = true;
+    return;
+  }
 
-    const connectedBoardIds = await getConnectedBoardIds(boardId, colEvento);
-    if (!connectedBoardIds.length) {
-      setStatus("A coluna de Evento não está conectada a nenhum board.", false);
-      return;
-    }
-
-    const results = await Promise.all(connectedBoardIds.map(id => monday.api(`
+  const results = await Promise.all(connectedIds.map(id => monday.api(`
     query {
       boards(ids: [${id}]) {
-        id
-        name
+        id name
         items_page(limit: 500) { items { id name } }
       }
     }
   `)));
 
-    results.forEach(r => {
-      const b = r.data.boards[0];
-      const group = document.createElement("optgroup");
-      group.label = `• ${b.name}`;
-      document.getElementById("evento").appendChild(group);
-      b.items_page.items.forEach(it => {
-        const opt = document.createElement("option");
-        opt.value = it.id;
-        opt.textContent = it.name;
+  sel.innerHTML = "";
+  results.forEach(r => {
+    const b = r.data.boards[0];
+    const group = document.createElement("optgroup");
+    group.label = `• ${b.name}`;
+    sel.appendChild(group);
+    b.items_page.items.forEach(it => {
+      const opt = document.createElement("option");
+      opt.value = it.id;
+      opt.textContent = it.name;
       group.appendChild(opt);
     });
-    });
-  }
+  });
+  sel.disabled = false;
+}
 
+  /* ---------- Create item + upload ---------- */
   async function createReembolso(boardId, payload) {
     const columnValues = {
       [COL_PESSOA]: { personsAndTeams: [{ id: Number(payload.pessoaId), kind: "person" }] },
       [COL_DATA_GASTO]: { date: payload.dataGasto },
-      [COL_VALOR]: payload.valor ? String(payload.valor) : "",
-      [COL_EVENTO]: { linkedPulseIds: [{ linkedPulseId: Number(payload.eventoItemId) }] },
-      ...(payload.link ? { [COL_LINK]: { url: payload.link, text: "Comprovante/Referência" } } : {})
-    };
+    [COL_VALOR]: payload.valor ? String(payload.valor).replace(',', '.') : "",
+    [COL_EVENTO]: { linkedPulseIds: [{ linkedPulseId: Number(payload.eventoItemId) }] },
+    ...(payload.link ? { [COL_LINK]: { url: payload.link, text: "Comprovante/Referência" } } : {})
+  };
 
-    const mutation = `
+  const mutation = `
     mutation {
       create_item(
         board_id: ${boardId},
@@ -188,8 +228,8 @@
       ) { id }
     }
   `;
-    return monday.api(mutation);
-  }
+  return monday.api(mutation);
+}
 
   async function uploadFileToColumn(itemId, file) {
     const token = (await monday.get("sessionToken")).data;
@@ -199,75 +239,100 @@
       add_file_to_column(item_id: ${itemId}, column_id: "${COL_COMPROVANTE}", file: $file) { id }
     }
   `);
-    formData.append("variables[file]", file);
+  formData.append("variables[file]", file);
 
-    const res = await fetch("https://api.monday.com/v2/file", {
-      method: "POST",
-      headers: { Authorization: token },
-      body: formData
-    });
-    return res.json();
-  }
+  const res = await fetch("https://api.monday.com/v2/file", {
+    method: "POST",
+    headers: { Authorization: token },
+    body: formData
+  });
+  return res.json();
+}
 
+  /* ---------- Boot ---------- */
   document.addEventListener("DOMContentLoaded", async () => {
-    try {
-      // Aguarda token + contexto ANTES de qualquer chamada
-      await waitForMondayReady();
+  const form = document.getElementById("form-reembolso");
+  const submitBtn = document.getElementById("submitBtn");
 
+  // botão fixo dispara submit do form
+  submitBtn.addEventListener("click", () => form.requestSubmit());
+
+  try {
+    const token = await getSessionTokenWithRetry();
+    monday.setToken(token);
+
+    // Carrega Pessoas mesmo sem boardId
     await populatePessoaSelect();
-      await populateEventoSelectFromConnectedBoards(currentBoardId, COL_EVENTO);
 
-    document.getElementById("form-reembolso").addEventListener("submit", async (e) => {
+    // Tenta obter boardId (necessário pro Evento)
+    currentBoardId = await getBoardIdWithRetry();
+    if (currentBoardId) {
+      await populateEventoSelectFromConnectedBoards(currentBoardId, COL_EVENTO);
+    } else {
+      document.getElementById("evento").disabled = true;
+      setStatus("Abra esta view dentro de um Board para escolher o Evento.", false);
+    }
+
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      setStatus("Enviando...");
+
+      // UX de submit no mobile
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Enviando…";
+
+      setStatus("Enviando…", true);
 
       const descricao = document.getElementById("descricao").value.trim();
       const pessoaId = document.getElementById("pessoa").value;
       const dataGasto = document.getElementById("data_gasto").value;
       const valor = document.getElementById("valor").value;
-      const eventoItemId = document.getElementById("evento").value;
+      const eventoSel = document.getElementById("evento");
+      const eventoItemId = eventoSel.disabled ? null : eventoSel.value;
       const link = document.getElementById("link").value.trim();
       const file = document.getElementById("comprovante").files[0];
 
-      if (!descricao || !pessoaId || !dataGasto || !eventoItemId) {
+      if (!descricao || !pessoaId || !dataGasto || (!eventoSel.disabled && !eventoItemId)) {
         setStatus("Preencha os campos obrigatórios.", false);
+        submitBtn.disabled = false; submitBtn.textContent = "Enviar";
+        return;
+      }
+      if (!currentBoardId) {
+        setStatus("Esta view precisa estar dentro de um Board para criar o item.", false);
+        submitBtn.disabled = false; submitBtn.textContent = "Enviar";
         return;
       }
 
-      const res = await createReembolso(currentBoardId, { descricao, pessoaId, dataGasto, valor, eventoItemId, link });
+      try {
+        const res = await createReembolso(currentBoardId, { descricao, pessoaId, dataGasto, valor, eventoItemId, link });
+        if (res.errors?.length) { setStatus("Erro: " + res.errors[0].message, false); return; }
 
-      if (res.errors?.length) {
-        setStatus("Erro: " + res.errors[0].message, false);
-        console.error(res.errors);
-        return;
-      }
-      if (!res.data?.create_item?.id) {
-        setStatus("Erro: criação não retornou ID.", false);
-        console.error(res);
-        return;
-      }
+        const itemId = res.data?.create_item?.id;
+        if (!itemId) { setStatus("Erro: criação não retornou ID.", false); return; }
 
-      const itemId = res.data.create_item.id;
-
-      if (file) {
-        const up = await uploadFileToColumn(itemId, file);
-        if (up.errors?.length) {
-          console.error("Erro upload:", up.errors[0].message);
-          setStatus("Item criado, mas falhou ao anexar o comprovante.", false);
-          return;
+        if (file) {
+          const up = await uploadFileToColumn(itemId, file);
+          if (up.errors?.length) {
+            setStatus("Item criado, mas falhou o upload: " + up.errors[0].message, false);
+            return;
+          }
         }
+
+        setStatus(`Reembolso criado com sucesso! ID: ${itemId}`);
+        form.reset();
+      } catch (err) {
+        console.error(err);
+        setStatus("Erro ao criar reembolso. Veja o console para detalhes.", false);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Enviar";
       }
-
-      setStatus(`Reembolso criado com sucesso! ID: ${itemId}`);
-      e.target.reset();
     });
-    } catch (err) {
-      console.error(err);
-      setStatus("Falha ao inicializar o app. Verifique permissões e contexto.", false);
-    }
-  });
+  } catch (err) {
+    console.error(err);
+    setStatus(err.message || "Falha ao inicializar.", false);
+  }
+});
 </script>
-
 
 </body>
 </html>
